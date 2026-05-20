@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CyberShield – Port Scanner Dashboard</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts: Share Tech Mono + Rajdhani for cyberpunk aesthetic -->
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <script>
+    /* ─── Tailwind custom theme extension ─────────────────────── */
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            neon:  { green: '#00ff9f', cyan: '#00e5ff', red: '#ff2d55', amber: '#ffb300' },
+            cyber: { dark: '#020c14', panel: '#041726', card: '#071e33', border: '#0a3655' }
+          },
+          fontFamily: {
+            mono:  ['"Share Tech Mono"', 'monospace'],
+            cyber: ['Rajdhani', 'sans-serif']
+          },
+          animation: {
+            'pulse-slow':   'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite',
+            'scan-line':    'scanLine 2s linear infinite',
+            'flicker':      'flicker 4s infinite',
+            'grid-move':    'gridMove 20s linear infinite',
+            'glow-pulse':   'glowPulse 2s ease-in-out infinite',
+            'slide-in':     'slideIn 0.4s ease-out forwards',
+            'blink':        'blink 1s step-end infinite',
+          },
+          keyframes: {
+            scanLine:  { '0%': {top:'-4px'}, '100%': {top:'100%'} },
+            flicker:   { '0%,100%':{opacity:'1'},'92%':{opacity:'1'},'93%':{opacity:'0.4'},'94%':{opacity:'1'},'96%':{opacity:'0.6'},'97%':{opacity:'1'} },
+            gridMove:  { '0%': {backgroundPosition:'0 0'}, '100%': {backgroundPosition:'0 80px'} },
+            glowPulse: { '0%,100%':{opacity:'0.6',transform:'scale(1)'},'50%':{opacity:'1',transform:'scale(1.05)'} },
+            slideIn:   { '0%': {opacity:'0',transform:'translateY(12px)'}, '100%': {opacity:'1',transform:'translateY(0)'} },
+            blink:     { '0%,100%':{opacity:'1'},'50%':{opacity:'0'} },
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    /* ─── Global base styles ───────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background-color: #020c14;
+      color: #c8e6f7;
+      font-family: 'Rajdhani', sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* ─── Animated cyber-grid background ─────────────────────── */
+    .cyber-grid-bg {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.04) 1px, transparent 1px);
+      background-size: 60px 60px;
+      animation: gridMove 20s linear infinite;
+    }
+
+    /* ─── Neon glow helpers ───────────────────────────────────── */
+    .glow-green  { text-shadow: 0 0 8px #00ff9f, 0 0 22px #00ff9f88; }
+    .glow-cyan   { text-shadow: 0 0 8px #00e5ff, 0 0 22px #00e5ff88; }
+    .glow-border-green { box-shadow: 0 0 0 1px #00ff9f44, 0 0 18px #00ff9f22, inset 0 0 18px #00ff9f08; }
+    .glow-border-cyan  { box-shadow: 0 0 0 1px #00e5ff44, 0 0 18px #00e5ff22, inset 0 0 18px #00e5ff08; }
+    .glow-btn-green {
+      box-shadow: 0 0 0 1px #00ff9f66, 0 0 20px #00ff9f44;
+      transition: box-shadow 0.25s, transform 0.15s;
+    }
+    .glow-btn-green:hover {
+      box-shadow: 0 0 0 1px #00ff9fcc, 0 0 32px #00ff9f66, 0 0 60px #00ff9f22;
+      transform: translateY(-1px);
+    }
+    .glow-btn-cyan {
+      box-shadow: 0 0 0 1px #00e5ff66, 0 0 20px #00e5ff44;
+      transition: box-shadow 0.25s, transform 0.15s;
+    }
+    .glow-btn-cyan:hover {
+      box-shadow: 0 0 0 1px #00e5ffcc, 0 0 32px #00e5ff66;
+      transform: translateY(-1px);
+    }
+
+    /* ─── Glassmorphism card ──────────────────────────────────── */
+    .glass-card {
+      background: rgba(4, 23, 38, 0.75);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(0,229,255,0.12);
+      border-radius: 12px;
+    }
+
+    /* ─── Scrollbar ───────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #020c14; }
+    ::-webkit-scrollbar-thumb { background: #00e5ff44; border-radius: 4px; }
+
+    /* ─── Scan animation wrapper ──────────────────────────────── */
+    .scan-container { position: relative; overflow: hidden; }
+    .scan-line-el {
+      position: absolute; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #00ff9f, transparent);
+      box-shadow: 0 0 14px #00ff9f, 0 0 28px #00ff9f66;
+      animation: scanLine 2s linear infinite;
+    }
+
+    /* ─── Table row hover ─────────────────────────────────────── */
+    .results-table tbody tr {
+      transition: background 0.2s;
+      border-bottom: 1px solid rgba(0,229,255,0.07);
+    }
+    .results-table tbody tr:hover { background: rgba(0,229,255,0.06); }
+
+    /* ─── Status badges ───────────────────────────────────────── */
+    .badge-open   { background: rgba(0,255,159,0.12); color: #00ff9f; border: 1px solid #00ff9f44; }
+    .badge-closed { background: rgba(255,45,85,0.12);  color: #ff2d55; border: 1px solid #ff2d5544; }
+    .badge-filtered { background: rgba(255,179,0,0.12); color: #ffb300; border: 1px solid #ffb30044; }
+
+    /* ─── Loading spinner ─────────────────────────────────────── */
+    .cyber-spinner {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(0,229,255,0.15);
+      border-top-color: #00ff9f;
+      border-right-color: #00e5ff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Hero animated title clip ────────────────────────────── */
+    .hero-title-clip {
+      background: linear-gradient(90deg, #00ff9f, #00e5ff, #00ff9f);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: textShimmer 3s linear infinite;
+    }
+    @keyframes textShimmer { to { background-position: 200% center; } }
+
+    /* ─── Typewriter cursor ───────────────────────────────────── */
+    .cursor::after {
+      content: '▌';
+      color: #00ff9f;
+      animation: blink 1s step-end infinite;
+    }
+
+    /* ─── Stat card accent bar ─────────────────────────────────── */
+    .stat-bar { height: 3px; border-radius: 2px; }
+
+    /* ─── Progress ring ──────────────────────────────────────── */
+    .ring-svg circle { transition: stroke-dashoffset 1s ease; }
+
+    /* ─── Corner decoration ─────────────────────────────────── */
+    .corner-tl::before, .corner-br::after {
+      content: '';
+      position: absolute;
+      width: 14px; height: 14px;
+      border-color: #00e5ff;
+      border-style: solid;
+    }
+    .corner-tl::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+    .corner-br::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+    /* ─── Flicker effect on logo ────────────────────────────── */
+    .logo-text { animation: flicker 4s infinite; }
+
+    /* ─── Nav blur ────────────────────────────────────────────── */
+    .nav-blur {
+      background: rgba(2,12,20,0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(0,229,255,0.1);
+    }
+
+    /* ─── Input focus glow ────────────────────────────────────── */
+    .cyber-input {
+      background: rgba(0,229,255,0.05);
+      border: 1px solid rgba(0,229,255,0.2);
+      color: #c8e6f7;
+      transition: border-color 0.25s, box-shadow 0.25s;
+    }
+    .cyber-input:focus {
+      outline: none;
+      border-color: #00e5ff88;
+      box-shadow: 0 0 0 3px rgba(0,229,255,0.1), 0 0 18px rgba(0,229,255,0.12);
+    }
+    .cyber-input::placeholder { color: rgba(200,230,247,0.3); }
+
+    /* ─── Animated particles ─────────────────────────────────── */
+    .particle {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: floatUp var(--dur, 8s) ease-in infinite;
+      opacity: 0;
+    }
+    @keyframes floatUp {
+      0%   { opacity: 0; transform: translateY(0) scale(0.5); }
+      10%  { opacity: 0.6; }
+      90%  { opacity: 0.2; }
+      100% { opacity: 0; transform: translateY(-120px) scale(1.5); }
+    }
+
+    /* ─── Responsive tweaks ──────────────────────────────────── */
+    @media (max-width: 640px) {
+      .hero-title-main { font-size: 2.4rem; }
+    }
+  </style>
+</head>
+
+<body class="relative min-h-screen font-cyber">
+
+  <!-- ═══ ANIMATED BACKGROUND ═══════════════════════════════════ -->
+  <div class="cyber-grid-bg" aria-hidden="true"></div>
+
+  <!-- Radial ambient glows -->
+  <div aria-hidden="true" class="fixed top-[-200px] left-[-200px] w-[600px] h-[600px] rounded-full pointer-events-none"
+       style="background: radial-gradient(circle, rgba(0,229,255,0.06) 0%, transparent 70%);"></div>
+  <div aria-hidden="true" class="fixed bottom-[-200px] right-[-200px] w-[600px] h-[600px] rounded-full pointer-events-none"
+       style="background: radial-gradient(circle, rgba(0,255,159,0.05) 0%, transparent 70%);"></div>
+
+  <!-- Floating particles -->
+  <div id="particles" aria-hidden="true" class="fixed inset-0 pointer-events-none overflow-hidden z-0"></div>
+
+  <!-- ═══ NAVBAR ════════════════════════════════════════════════ -->
+  <nav class="nav-blur sticky top-0 z-50 w-full">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+
+        <!-- Logo -->
+        <div class="flex items-center gap-3">
+          <!-- Shield SVG icon -->
+          <svg class="w-8 h-8 flex-shrink-0" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M16 2L4 7v9c0 7.18 5.14 13.89 12 15.93C22.86 29.89 28 23.18 28 16V7L16 2z"
+                  stroke="#00e5ff" stroke-width="1.5" fill="rgba(0,229,255,0.08)"/>
+            <path d="M16 2L4 7v9c0 7.18 5.14 13.89 12 15.93" stroke="#00ff9f" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="16" cy="15" r="4" fill="rgba(0,255,159,0.2)" stroke="#00ff9f" stroke-width="1.2"/>
+            <path d="M14 15l1.5 1.5L18 13" stroke="#00ff9f" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="logo-text text-2xl font-bold tracking-widest glow-cyan"
+                style="color:#00e5ff; font-family:'Share Tech Mono',monospace;">
+            CYBER<span style="color:#00ff9f;" class="glow-green">SHIELD</span>
+          </span>
+        </div>
+
+        <!-- Desktop nav links -->
+        <div class="hidden md:flex items-center gap-8 text-sm tracking-widest uppercase">
+          <a href="#scanner" class="text-gray-400 hover:text-neon-cyan transition-colors duration-200 hover:glow-cyan">Scanner</a>
+          <a href="#results"  class="text-gray-400 hover:text-neon-cyan transition-colors duration-200 hover:glow-cyan">Results</a>
+          <a href="#stats"    class="text-gray-400 hover:text-neon-cyan transition-colors duration-200 hover:glow-cyan">Stats</a>
+        </div>
+
+        <!-- Status indicator -->
+        <div class="flex items-center gap-2 text-xs font-mono text-gray-400">
+          <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse-slow inline-block"
+                style="box-shadow: 0 0 6px #00ff9f;"></span>
+          <span class="hidden sm:inline">SYSTEM ONLINE</span>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══ MAIN CONTENT ══════════════════════════════════════════ -->
+  <main class="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+
+    <!-- ─── HERO SECTION ──────────────────────────────────────── -->
+    <section class="pt-20 pb-16 text-center" aria-label="Hero">
+      <!-- Pre-title badge -->
+      <div class="inline-flex items-center gap-2 mb-6 px-4 py-1.5 rounded-full border text-xs font-mono tracking-widest"
+           style="border-color:rgba(0,229,255,0.3); background:rgba(0,229,255,0.07); color:#00e5ff;">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse-slow"
+              style="box-shadow:0 0 6px #00ff9f;"></span>
+        ADVANCED NETWORK RECONNAISSANCE TOOL
+      </div>
+
+      <!-- Main headline -->
+      <h1 class="hero-title-main text-6xl sm:text-7xl font-bold tracking-tight leading-none mb-4"
+          style="font-family:'Share Tech Mono',monospace;">
+        <span class="hero-title-clip">PORT SCANNER</span>
+      </h1>
+
+      <!-- Animated typewriter subtitle -->
+      <p id="typewriter-sub" class="text-xl sm:text-2xl text-gray-400 font-mono mb-4 cursor min-h-[2rem]"></p>
+
+      <p class="text-gray-500 max-w-xl mx-auto text-base mb-10 tracking-wide">
+        Identify open ports, detect running services, and assess your network exposure in real time.
+        Built for security professionals and red teams.
+      </p>
+
+      <!-- CTA Buttons -->
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="#scanner"
+           class="glow-btn-green px-8 py-3 rounded font-bold text-sm tracking-widest uppercase transition-all duration-200"
+           style="background:rgba(0,255,159,0.1); border:1px solid #00ff9f66; color:#00ff9f;">
+          ▶ &nbsp;START SCAN
+        </a>
+        <a href="#stats"
+           class="glow-btn-cyan px-8 py-3 rounded font-bold text-sm tracking-widest uppercase transition-all duration-200"
+           style="background:rgba(0,229,255,0.07); border:1px solid #00e5ff44; color:#00e5ff;">
+          VIEW STATS
+        </a>
+      </div>
+
+      <!-- Divider line -->
+      <div class="mt-16 flex items-center gap-4 max-w-2xl mx-auto">
+        <div class="flex-1 h-px" style="background:linear-gradient(90deg,transparent,#00e5ff33);"></div>
+        <span class="font-mono text-xs text-gray-600 tracking-widest">SYS.ACTIVE</span>
+        <div class="flex-1 h-px" style="background:linear-gradient(90deg,#00e5ff33,transparent);"></div>
+      </div>
+    </section>
+
+    <!-- ─── PORT SCANNER CARD ──────────────────────────────────── -->
+    <section id="scanner" class="mb-12" aria-label="Port Scanner">
+      <div class="glass-card glow-border-cyan corner-tl corner-br relative overflow-hidden p-6 sm:p-8">
+
+        <!-- Card header -->
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-8">
+          <div>
+            <h2 class="text-2xl font-bold tracking-widest glow-cyan" style="color:#00e5ff;">
+              PORT SCANNER
+            </h2>
+            <p class="text-sm text-gray-500 font-mono mt-1">TARGET ACQUISITION MODULE v2.4.1</p>
+          </div>
+          <!-- Live clock display -->
+          <div class="font-mono text-xs text-gray-500 text-right">
+            <div id="live-time" class="text-neon-green text-sm" style="color:#00ff9f;"></div>
+            <div>UTC SESSION ACTIVE</div>
+          </div>
+        </div>
+
+        <!-- Scan input row -->
+        <div class="flex flex-col sm:flex-row gap-3 mb-6">
+          <div class="relative flex-1">
+            <!-- Target icon -->
+            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" viewBox="0 0 24 24"
+                 fill="none" stroke="#00e5ff" stroke-width="1.8" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>
+              <line x1="12" y1="3" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="21"/>
+              <line x1="3" y1="12" x2="7" y2="12"/><line x1="17" y1="12" x2="21" y2="12"/>
+            </svg>
+            <input
+              id="target-input"
+              type="text"
+              placeholder="Enter IP or domain  (e.g. scanme.nmap.org)"
+              value="scanme.nmap.org"
+              class="cyber-input w-full rounded pl-10 pr-4 py-3 font-mono text-sm"
+              aria-label="Target IP or domain"
+            />
+          </div>
+          <button
+            id="scan-btn"
+            onclick="startScan()"
+            class="glow-btn-green px-8 py-3 rounded font-bold text-sm tracking-widest uppercase whitespace-nowrap"
+            style="background:rgba(0,255,159,0.12); border:1px solid #00ff9f88; color:#00ff9f;"
+          >
+            ⬡ &nbsp;INITIATE SCAN
+          </button>
+        </div>
+
+        <!-- Scan progress bar (hidden by default) -->
+        <div id="scan-progress-wrap" class="hidden mb-6">
+          <div class="flex justify-between font-mono text-xs text-gray-500 mb-2">
+            <span id="scan-status-text">Initializing...</span>
+            <span id="scan-percent">0%</span>
+          </div>
+          <div class="h-1.5 rounded-full overflow-hidden" style="background:rgba(0,229,255,0.1);">
+            <div id="scan-progress-bar" class="h-full rounded-full transition-all duration-300"
+                 style="width:0%; background:linear-gradient(90deg,#00ff9f,#00e5ff);
+                        box-shadow:0 0 10px #00ff9f88;">
+            </div>
+          </div>
+        </div>
+
+        <!-- Scan animation area (hidden by default) -->
+        <div id="scan-animation" class="hidden scan-container rounded-lg p-6 mb-6 font-mono text-xs"
+             style="background:rgba(0,0,0,0.4); border:1px solid rgba(0,255,159,0.15); min-height:140px;">
+          <div class="scan-line-el" aria-hidden="true"></div>
+          <div class="flex items-center gap-3 mb-4">
+            <div class="cyber-spinner"></div>
+            <span style="color:#00e5ff;">SCANNING TARGET <span id="scan-target-label" class="text-neon-green" style="color:#00ff9f;"></span></span>
+          </div>
+          <div id="scan-log" class="space-y-1 text-gray-500 overflow-y-auto" style="max-height:80px;"></div>
+        </div>
+
+        <!-- Error message -->
+        <div id="error-msg" class="hidden mb-6 px-4 py-3 rounded font-mono text-sm"
+             style="background:rgba(255,45,85,0.1); border:1px solid rgba(255,45,85,0.3); color:#ff2d55;">
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ─── RESULTS TABLE ─────────────────────────────────────── -->
+    <section id="results" class="mb-12" aria-label="Scan Results">
+      <div class="glass-card glow-border-green p-6 sm:p-8">
+
+        <!-- Section header -->
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <h2 class="text-2xl font-bold tracking-widest glow-green" style="color:#00ff9f;">
+            SCAN RESULTS
+          </h2>
+          <div id="results-meta" class="font-mono text-xs text-gray-500">
+            — awaiting scan —
+          </div>
+        </div>
+
+        <!-- Table wrapper -->
+        <div class="overflow-x-auto rounded-lg" style="border:1px solid rgba(0,229,255,0.1);">
+          <table class="results-table w-full text-sm font-mono" aria-label="Port scan results">
+            <thead>
+              <tr style="background:rgba(0,229,255,0.06); border-bottom:1px solid rgba(0,229,255,0.15);">
+                <th class="px-6 py-4 text-left text-xs tracking-widest uppercase" style="color:#00e5ff;">#</th>
+                <th class="px-6 py-4 text-left text-xs tracking-widest uppercase" style="color:#00e5ff;">Port</th>
+                <th class="px-6 py-4 text-left text-xs tracking-widest uppercase" style="color:#00e5ff;">Status</th>
+                <th class="px-6 py-4 text-left text-xs tracking-widest uppercase" style="color:#00e5ff;">Service</th>
+                <th class="px-6 py-4 text-left text-xs tracking-widest uppercase hidden sm:table-cell" style="color:#00e5ff;">Risk</th>
+              </tr>
+            </thead>
+            <tbody id="results-tbody">
+              <!-- Populated by JS – sample data pre-loaded on DOMContentLoaded -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- No results placeholder -->
+        <div id="no-results" class="hidden text-center py-16 font-mono text-gray-600">
+          <div class="text-4xl mb-3">◈</div>
+          <p class="tracking-widest text-sm">NO DATA — RUN A SCAN TO POPULATE RESULTS</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ─── STATISTICS CARDS ──────────────────────────────────── -->
+    <section id="stats" class="mb-12" aria-label="Statistics">
+      <h2 class="text-xl font-bold tracking-widest glow-cyan mb-6" style="color:#00e5ff;">
+        SCAN STATISTICS
+      </h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+
+        <!-- Card 1: Open Ports -->
+        <div class="glass-card p-6 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-200">
+          <div class="stat-bar mb-4 w-full" style="background:linear-gradient(90deg,#00ff9f,transparent);"></div>
+          <p class="font-mono text-xs text-gray-500 tracking-widest uppercase mb-2">Open Ports</p>
+          <p id="stat-open" class="text-4xl font-bold glow-green mb-1" style="color:#00ff9f; font-family:'Share Tech Mono',monospace;">8</p>
+          <p class="text-xs text-gray-600 font-mono">of 1000 scanned</p>
+          <!-- Decorative ring -->
+          <div class="absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10 group-hover:opacity-20 transition-opacity"
+               style="border: 2px solid #00ff9f;"></div>
+        </div>
+
+        <!-- Card 2: Total Scanned -->
+        <div class="glass-card p-6 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-200">
+          <div class="stat-bar mb-4 w-full" style="background:linear-gradient(90deg,#00e5ff,transparent);"></div>
+          <p class="font-mono text-xs text-gray-500 tracking-widest uppercase mb-2">Ports Scanned</p>
+          <p id="stat-scanned" class="text-4xl font-bold glow-cyan mb-1" style="color:#00e5ff; font-family:'Share Tech Mono',monospace;">1000</p>
+          <p class="text-xs text-gray-600 font-mono">range 1 – 1000</p>
+          <div class="absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10 group-hover:opacity-20 transition-opacity"
+               style="border: 2px solid #00e5ff;"></div>
+        </div>
+
+        <!-- Card 3: Closed Ports -->
+        <div class="glass-card p-6 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-200">
+          <div class="stat-bar mb-4 w-full" style="background:linear-gradient(90deg,#ff2d55,transparent);"></div>
+          <p class="font-mono text-xs text-gray-500 tracking-widest uppercase mb-2">Closed Ports</p>
+          <p id="stat-closed" class="text-4xl font-bold mb-1" style="color:#ff2d55; text-shadow:0 0 8px #ff2d5588; font-family:'Share Tech Mono',monospace;">992</p>
+          <p class="text-xs text-gray-600 font-mono">filtered / closed</p>
+          <div class="absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10 group-hover:opacity-20 transition-opacity"
+               style="border: 2px solid #ff2d55;"></div>
+        </div>
+
+        <!-- Card 4: Risk Level -->
+        <div class="glass-card p-6 relative overflow-hidden group hover:scale-[1.02] transition-transform duration-200">
+          <div class="stat-bar mb-4 w-full" style="background:linear-gradient(90deg,#ffb300,transparent);"></div>
+          <p class="font-mono text-xs text-gray-500 tracking-widest uppercase mb-2">Risk Level</p>
+          <p id="stat-risk" class="text-4xl font-bold mb-1"
+             style="color:#ffb300; text-shadow:0 0 8px #ffb30088; font-family:'Share Tech Mono',monospace;">MEDIUM</p>
+          <p class="text-xs text-gray-600 font-mono" id="stat-risk-sub">review required</p>
+          <div class="absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10 group-hover:opacity-20 transition-opacity"
+               style="border: 2px solid #ffb300;"></div>
+        </div>
+
+      </div>
+
+      <!-- Risk meter bar -->
+      <div class="glass-card p-6 mt-5">
+        <div class="flex justify-between font-mono text-xs text-gray-500 mb-3">
+          <span>RISK EXPOSURE METER</span>
+          <span id="risk-pct-label">40%</span>
+        </div>
+        <div class="h-3 rounded-full overflow-hidden" style="background:rgba(255,255,255,0.05);">
+          <div id="risk-bar" class="h-full rounded-full transition-all duration-700"
+               style="width:40%; background:linear-gradient(90deg,#00ff9f,#ffb300,#ff2d55);
+                      box-shadow:0 0 12px #ffb30066;">
+          </div>
+        </div>
+        <div class="flex justify-between font-mono text-xs text-gray-700 mt-2">
+          <span>LOW</span><span>MEDIUM</span><span>HIGH</span><span>CRITICAL</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══ FOOTER ════════════════════════════════════════════════ -->
+  <footer class="relative z-10 border-t" style="border-color:rgba(0,229,255,0.1); background:rgba(2,12,20,0.95);">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-8 mb-8">
+
+        <!-- Brand -->
+        <div>
+          <div class="flex items-center gap-2 mb-3">
+            <svg class="w-5 h-5" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+              <path d="M16 2L4 7v9c0 7.18 5.14 13.89 12 15.93C22.86 29.89 28 23.18 28 16V7L16 2z"
+                    stroke="#00e5ff" stroke-width="1.5" fill="rgba(0,229,255,0.08)"/>
+            </svg>
+            <span class="font-mono text-sm font-bold" style="color:#00e5ff;">CYBERSHIELD</span>
+          </div>
+          <p class="text-xs text-gray-600 font-mono leading-relaxed">
+            Professional-grade network reconnaissance<br/>
+            and port scanning suite.
+          </p>
+        </div>
+
+        <!-- Quick links -->
+        <div>
+          <p class="font-mono text-xs tracking-widest text-gray-500 uppercase mb-3">Quick Access</p>
+          <ul class="space-y-2 text-xs font-mono text-gray-600">
+            <li><a href="#scanner" class="hover:text-neon-green transition-colors" style="">→ Port Scanner</a></li>
+            <li><a href="#results"  class="hover:text-neon-green transition-colors">→ Results Table</a></li>
+            <li><a href="#stats"    class="hover:text-neon-green transition-colors">→ Statistics</a></li>
+          </ul>
+        </div>
+
+        <!-- Status -->
+        <div>
+          <p class="font-mono text-xs tracking-widest text-gray-500 uppercase mb-3">System Status</p>
+          <ul class="space-y-2 text-xs font-mono text-gray-600">
+            <li class="flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse-slow" style="box-shadow:0 0 5px #00ff9f;"></span>
+              Backend API
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse-slow" style="box-shadow:0 0 5px #00ff9f;"></span>
+              Scanner Engine
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full" style="background:#ffb300; box-shadow:0 0 5px #ffb300;"></span>
+              Threat Intel Feed
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="border-t pt-6 flex flex-col sm:flex-row justify-between items-center gap-2"
+           style="border-color:rgba(0,229,255,0.07);">
+        <p class="font-mono text-xs text-gray-700">
+          © 2025 CyberShield. For authorized use only.
+        </p>
+        <p class="font-mono text-xs text-gray-700">
+          v2.4.1 &nbsp;|&nbsp; <span style="color:#00e5ff44;">flask backend on port 5000</span>
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ═══ JAVASCRIPT ════════════════════════════════════════════ -->
+  <script>
+    /* ══════════════════════════════════════════════════════════
+       CyberShield – Port Scanner Dashboard
+       Vanilla JS — no frameworks
+    ══════════════════════════════════════════════════════════ */
+
+    /* ─────────────────────────────────────────────────────────
+       SAMPLE DATA: pre-loaded realistic port scan result set
+    ───────────────────────────────────────────────────────── */
+    const SAMPLE_DATA = [
+      { port: 22,   status: 'OPEN',     service: 'SSH'      },
+      { port: 25,   status: 'FILTERED', service: 'SMTP'     },
+      { port: 53,   status: 'OPEN',     service: 'DNS'      },
+      { port: 80,   status: 'OPEN',     service: 'HTTP'     },
+      { port: 110,  status: 'CLOSED',   service: 'POP3'     },
+      { port: 143,  status: 'FILTERED', service: 'IMAP'     },
+      { port: 443,  status: 'OPEN',     service: 'HTTPS'    },
+      { port: 445,  status: 'CLOSED',   service: 'SMB'      },
+      { port: 3306, status: 'OPEN',     service: 'MySQL'    },
+      { port: 3389, status: 'CLOSED',   service: 'RDP'      },
+      { port: 5900, status: 'OPEN',     service: 'VNC'      },
+      { port: 6379, status: 'OPEN',     service: 'Redis'    },
+      { port: 8080, status: 'OPEN',     service: 'HTTP-Alt' },
+      { port: 8443, status: 'OPEN',     service: 'HTTPS-Alt'},
+    ];
+
+    /* ─────────────────────────────────────────────────────────
+       RISK MAP: port-to-risk level
+    ───────────────────────────────────────────────────────── */
+    const RISK_MAP = {
+      22: 'MEDIUM', 25: 'MEDIUM', 53: 'LOW', 80: 'LOW',
+      110: 'LOW', 143: 'LOW', 443: 'LOW', 445: 'HIGH',
+      3306: 'HIGH', 3389: 'HIGH', 5900: 'HIGH',
+      6379: 'CRITICAL', 8080: 'MEDIUM', 8443: 'MEDIUM',
+    };
+
+    /* ─────────────────────────────────────────────────────────
+       TYPEWRITER SUBTITLE
+    ───────────────────────────────────────────────────────── */
+    (function initTypewriter() {
+      const messages = [
+        'Identify vulnerabilities before attackers do.',
+        'Real-time network reconnaissance.',
+        'Powered by CyberShield Engine v2.4.',
+        'Scan. Detect. Protect.',
+      ];
+      let mi = 0, ci = 0, deleting = false;
+      const el = document.getElementById('typewriter-sub');
+      function tick() {
+        const msg = messages[mi];
+        if (!deleting) {
+          el.textContent = msg.slice(0, ++ci);
+          if (ci === msg.length) { deleting = true; setTimeout(tick, 2200); return; }
+        } else {
+          el.textContent = msg.slice(0, --ci);
+          if (ci === 0) { deleting = false; mi = (mi + 1) % messages.length; }
+        }
+        setTimeout(tick, deleting ? 40 : 65);
+      }
+      tick();
+    })();
+
+    /* ─────────────────────────────────────────────────────────
+       LIVE CLOCK
+    ───────────────────────────────────────────────────────── */
+    function updateClock() {
+      const el = document.getElementById('live-time');
+      if (!el) return;
+      el.textContent = new Date().toUTCString().split(' ').slice(1,5).join(' ');
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    /* ─────────────────────────────────────────────────────────
+       FLOATING PARTICLES
+    ───────────────────────────────────────────────────────── */
+    (function spawnParticles() {
+      const container = document.getElementById('particles');
+      const colors = ['#00ff9f', '#00e5ff', '#005f7f'];
+      for (let i = 0; i < 30; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        const size = Math.random() * 3 + 1;
+        p.style.cssText = `
+          width:${size}px; height:${size}px;
+          left:${Math.random()*100}%;
+          top:${Math.random()*100}%;
+          background:${colors[Math.floor(Math.random()*colors.length)]};
+          --dur:${6 + Math.random()*12}s;
+          animation-delay:${Math.random()*12}s;
+        `;
+        container.appendChild(p);
+      }
+    })();
+
+    /* ─────────────────────────────────────────────────────────
+       HELPER: render one table row
+    ───────────────────────────────────────────────────────── */
+    function buildRow(idx, entry) {
+      const s = entry.status.toUpperCase();
+      const badgeClass = s === 'OPEN' ? 'badge-open' : s === 'CLOSED' ? 'badge-closed' : 'badge-filtered';
+      const risk  = RISK_MAP[entry.port] || (s === 'OPEN' ? 'MEDIUM' : 'LOW');
+      const riskColor = { LOW:'#00ff9f', MEDIUM:'#ffb300', HIGH:'#ff6b35', CRITICAL:'#ff2d55' }[risk] || '#c8e6f7';
+
+      const tr = document.createElement('tr');
+      tr.style.animation = `slideIn 0.3s ease-out ${idx * 0.05}s both`;
+      tr.innerHTML = `
+        <td class="px-6 py-4 text-gray-600 text-xs">${String(idx).padStart(2,'0')}</td>
+        <td class="px-6 py-4 font-mono font-bold" style="color:#00e5ff;">${entry.port}</td>
+        <td class="px-6 py-4">
+          <span class="${badgeClass} text-xs px-2.5 py-1 rounded font-mono tracking-wider">
+            ${entry.status}
+          </span>
+        </td>
+        <td class="px-6 py-4 text-gray-300 text-sm">${entry.service}</td>
+        <td class="px-6 py-4 hidden sm:table-cell">
+          <span class="text-xs font-mono font-bold" style="color:${riskColor};">${risk}</span>
+        </td>
+      `;
+      return tr;
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       HELPER: render results & update stats
+    ───────────────────────────────────────────────────────── */
+    function renderResults(data, target) {
+      const tbody = document.getElementById('results-tbody');
+      const noRes = document.getElementById('no-results');
+      tbody.innerHTML = '';
+
+      if (!data || data.length === 0) {
+        noRes.classList.remove('hidden');
+        return;
+      }
+      noRes.classList.add('hidden');
+
+      data.forEach((entry, i) => tbody.appendChild(buildRow(i + 1, entry)));
+
+      // Update meta
+      const meta = document.getElementById('results-meta');
+      meta.textContent = `TARGET: ${target || '—'}  •  ${data.length} RESULTS  •  ${new Date().toLocaleTimeString()}`;
+
+      // Compute stats
+      const open   = data.filter(e => e.status.toUpperCase() === 'OPEN').length;
+      const closed = data.filter(e => e.status.toUpperCase() !== 'OPEN').length;
+      const total  = data.length;
+
+      document.getElementById('stat-open').textContent    = open;
+      document.getElementById('stat-scanned').textContent = total;
+      document.getElementById('stat-closed').textContent  = closed;
+
+      // Compute risk
+      let riskScore = 0;
+      data.forEach(e => {
+        if (e.status.toUpperCase() !== 'OPEN') return;
+        const r = RISK_MAP[e.port] || 'LOW';
+        riskScore += { LOW: 5, MEDIUM: 15, HIGH: 30, CRITICAL: 50 }[r] || 5;
+      });
+      const riskPct = Math.min(100, riskScore);
+      let riskLabel = 'LOW', riskSub = 'well protected';
+      if (riskPct > 70) { riskLabel = 'CRITICAL'; riskSub = 'immediate action'; }
+      else if (riskPct > 45) { riskLabel = 'HIGH'; riskSub = 'action required'; }
+      else if (riskPct > 20) { riskLabel = 'MEDIUM'; riskSub = 'review required'; }
+
+      const riskEl = document.getElementById('stat-risk');
+      riskEl.textContent = riskLabel;
+      const riskColors = { LOW:'#00ff9f', MEDIUM:'#ffb300', HIGH:'#ff6b35', CRITICAL:'#ff2d55' };
+      riskEl.style.color = riskColors[riskLabel];
+      riskEl.style.textShadow = `0 0 8px ${riskColors[riskLabel]}88`;
+      document.getElementById('stat-risk-sub').textContent  = riskSub;
+      document.getElementById('risk-bar').style.width       = riskPct + '%';
+      document.getElementById('risk-pct-label').textContent = riskPct + '%';
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       SCAN ANIMATION: fake progress log messages
+    ───────────────────────────────────────────────────────── */
+    let scanLogTimer = null;
+    const LOG_MSGS = [
+      'Resolving target hostname…',
+      'SYN packet dispatched to port range 1–1000',
+      'Analyzing TCP handshake responses…',
+      'UDP probe packets sent…',
+      'Service fingerprinting active…',
+      'Cross-referencing CVE database…',
+      'Aggregating open port list…',
+      'Finalizing scan report…',
+    ];
+
+    function startScanAnimation(target) {
+      const wrap  = document.getElementById('scan-animation');
+      const label = document.getElementById('scan-target-label');
+      const log   = document.getElementById('scan-log');
+      const prog  = document.getElementById('scan-progress-wrap');
+      const bar   = document.getElementById('scan-progress-bar');
+      const pct   = document.getElementById('scan-percent');
+      const stxt  = document.getElementById('scan-status-text');
+
+      label.textContent = target;
+      log.innerHTML = '';
+      wrap.classList.remove('hidden');
+      prog.classList.remove('hidden');
+      bar.style.width = '0%';
+      pct.textContent = '0%';
+
+      let step = 0;
+      scanLogTimer = setInterval(() => {
+        if (step >= LOG_MSGS.length) return;
+        const line = document.createElement('div');
+        line.textContent = '> ' + LOG_MSGS[step];
+        line.style.animation = 'slideIn 0.2s ease-out both';
+        log.appendChild(line);
+        log.scrollTop = log.scrollHeight;
+
+        const progress = Math.round(((step + 1) / LOG_MSGS.length) * 90);
+        bar.style.width = progress + '%';
+        pct.textContent = progress + '%';
+        stxt.textContent = LOG_MSGS[step];
+        step++;
+      }, 350);
+    }
+
+    function stopScanAnimation() {
+      clearInterval(scanLogTimer);
+      document.getElementById('scan-progress-bar').style.width = '100%';
+      document.getElementById('scan-percent').textContent = '100%';
+      document.getElementById('scan-status-text').textContent = 'Scan complete.';
+      setTimeout(() => {
+        document.getElementById('scan-animation').classList.add('hidden');
+        document.getElementById('scan-progress-wrap').classList.add('hidden');
+      }, 1200);
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       SHOW / HIDE ERROR MESSAGE
+    ───────────────────────────────────────────────────────── */
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = '⚠ ' + msg;
+      el.classList.remove('hidden');
+      stopScanAnimation();
+    }
+    function clearError() {
+      document.getElementById('error-msg').classList.add('hidden');
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       MAIN SCAN FUNCTION
+       Calls Flask backend at http://127.0.0.1:5000/scan
+       POST body: { "target": "<ip or domain>" }
+       Expected response: [{ "port": 80, "status": "OPEN", "service": "HTTP" }, …]
+    ───────────────────────────────────────────────────────── */
+    async function startScan() {
+      const target = document.getElementById('target-input').value.trim();
+      const btn    = document.getElementById('scan-btn');
+
+      // Basic validation
+      if (!target) {
+        showError('Please enter a valid IP address or domain name.');
+        return;
+      }
+
+      clearError();
+
+      // Disable button during scan
+      btn.disabled = true;
+      btn.textContent = '⏳  SCANNING…';
+      btn.style.opacity = '0.6';
+      btn.style.cursor  = 'not-allowed';
+
+      // Start the visual animation
+      startScanAnimation(target);
+
+      try {
+        /* ── Actual API call to Flask backend ── */
+        const response = await fetch('http://127.0.0.1:5000/scan', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ target }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Server responded with HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Validate data shape
+        if (!Array.isArray(data)) {
+          throw new Error('Unexpected response format from server.');
+        }
+
+        stopScanAnimation();
+
+        // Render results into table
+        renderResults(data, target);
+
+        // Smooth scroll to results
+        document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      } catch (err) {
+        /* ── Handle fetch / network / JSON errors ── */
+        stopScanAnimation();
+
+        // Friendly error: backend not running → show sample data
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError') || err.message.includes('net::ERR')) {
+          showError(
+            'Cannot reach Flask backend at 127.0.0.1:5000. ' +
+            'Displaying sample data — start your Flask server to run live scans.'
+          );
+          renderResults(SAMPLE_DATA, target);
+          document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+          showError(err.message || 'An unknown error occurred during the scan.');
+        }
+      } finally {
+        // Re-enable button
+        btn.disabled = false;
+        btn.textContent = '⬡  INITIATE SCAN';
+        btn.style.opacity = '1';
+        btn.style.cursor  = 'pointer';
+      }
+    }
+
+    /* ─────────────────────────────────────────────────────────
+       Allow Enter key to trigger scan
+    ───────────────────────────────────────────────────────── */
+    document.getElementById('target-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') startScan();
+    });
+
+    /* ─────────────────────────────────────────────────────────
+       INIT: load sample data on page load
+    ───────────────────────────────────────────────────────── */
+    document.addEventListener('DOMContentLoaded', () => {
+      renderResults(SAMPLE_DATA, 'scanme.nmap.org');
+    });
+
+  </script>
+
+</body>
+</html>
